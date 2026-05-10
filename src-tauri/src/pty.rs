@@ -63,6 +63,15 @@ impl PtyManager {
         // Force a sane terminal type — Claude Code's TUI assumes 256 colors.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Enrich PATH with the user's login-shell environment so that the
+        // child `claude` (and any hooks it spawns via /bin/sh) can find
+        // node / npm / fvm / asdf-managed tools. macOS GUI apps launched
+        // via Finder/Dock inherit the minimal launchd PATH (essentially
+        // /usr/bin:/bin:/usr/sbin:/sbin), which makes `node: command not
+        // found` the default failure mode for any user-defined hook.
+        if let Some(path) = enriched_path() {
+            cmd.env("PATH", path);
+        }
 
         let child = pair.slave.spawn_command(cmd).context("spawn child")?;
         let mut reader = pair
@@ -182,6 +191,61 @@ fn pick_shell() -> String {
 #[cfg(windows)]
 fn pick_shell() -> String {
     std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
+}
+
+/// Resolve the user's full PATH the way Terminal.app would see it — a
+/// login + interactive shell sources `.zprofile` AND `.zshrc`, which is
+/// where most version managers (nvm/fvm/asdf) and tooling installs put
+/// themselves. Cached at first call: spawning a shell takes ~100-200ms,
+/// and we don't want to pay it on every session create.
+fn enriched_path() -> Option<String> {
+    use once_cell::sync::OnceCell;
+    static CACHED: OnceCell<Option<String>> = OnceCell::new();
+    CACHED
+        .get_or_init(|| {
+            #[cfg(unix)]
+            {
+                let shells = [
+                    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()),
+                    "/bin/zsh".into(),
+                    "/bin/bash".into(),
+                ];
+                for shell in shells {
+                    if !std::path::Path::new(&shell).is_file() {
+                        continue;
+                    }
+                    if let Ok(out) = std::process::Command::new(&shell)
+                        .args(["-l", "-i", "-c", "echo $PATH"])
+                        .output()
+                    {
+                        if out.status.success() {
+                            if let Ok(raw) = String::from_utf8(out.stdout) {
+                                let path = raw.trim();
+                                if !path.is_empty() {
+                                    // Always prepend Homebrew Apple Silicon
+                                    // path defensively, in case the user's
+                                    // shell rc forgot to add it but we still
+                                    // want `claude` from /opt/homebrew/bin
+                                    // to resolve.
+                                    let homebrew = "/opt/homebrew/bin";
+                                    if path
+                                        .split(':')
+                                        .any(|p| p == homebrew)
+                                    {
+                                        return Some(path.to_string());
+                                    } else {
+                                        return Some(format!("{homebrew}:{path}"));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Windows / fallback: leave PATH unchanged (parent inherits).
+            None
+        })
+        .clone()
 }
 
 /// Locate the `claude` binary. macOS GUI apps typically don't inherit the
