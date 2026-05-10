@@ -1,8 +1,16 @@
 {
   "name": "claudedeck",
   "version": "0.1.0",
-  "description": "",
+  "description": "Multi-session Claude Code orchestrator with worktree isolation, agent dispatch, and pipeline awareness.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raphaelbarbosaqwerty/ClaudeDeck.git"
+  },
+  "homepage": "https://github.com/raphaelbarbosaqwerty/ClaudeDeck",
+  "bugs": {
+    "url": "https://github.com/raphaelbarbosaqwerty/ClaudeDeck/issues"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -11,7 +19,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "bump": "node scripts/bump-version.mjs"
   },
   "license": "MIT",
   "dependencies": {
