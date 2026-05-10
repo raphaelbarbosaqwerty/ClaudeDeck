@@ -14,6 +14,43 @@ release. Move these into a versioned section when cutting a new release.
 
 ---
 
+## [0.1.1] — 2026-05-10
+
+Patch release with two important fixes that landed shortly after v0.1.0.
+**Recommended upgrade for all macOS users**, especially anyone with hooks
+configured in `~/.claude/settings.json`.
+
+### 🐛 Fixes
+
+- **PTY: spawned `claude` now inherits a full login-shell PATH.** macOS
+  GUI apps launched from Finder/Dock inherit the minimal launchd PATH
+  (`/usr/bin:/bin:/usr/sbin:/sbin`), which doesn't include Homebrew, nvm,
+  fvm, or asdf. Any Claude Code hook that called `node` (the default for
+  many user-defined hooks) failed with `node: command not found`. v0.1.1
+  resolves the user's full PATH once via `zsh -l -i -c 'echo $PATH'` —
+  the same env Terminal.app sees — caches it in `OnceCell`, and injects
+  it into every PTY spawn. Unblocks Claude's hook system and any CLI
+  the agent invokes (npm, bun, gh, kubectl, cargo, deno, …).
+- **CI: macOS release jobs no longer crash on missing Apple secrets.**
+  v0.1.0's release workflow declared `APPLE_CERTIFICATE` and friends in
+  the env block. With no real secrets configured, GitHub Actions
+  resolved them to empty strings, and `tauri-action` invoked
+  `security import` on those empty values, causing
+  `SecKeychainItemImport: One or more parameters were not valid`. The
+  Apple env vars are now commented out and accompanied by step-by-step
+  instructions for enabling signing once a Developer ID exists.
+
+### 📝 Notes
+
+- v0.1.0's macOS release artifacts (`.dmg`) failed to build for the
+  reason above. Use v0.1.1's installers instead.
+- Linux (`.deb` / `.AppImage`) and Windows (`.exe` / `.msi`) artifacts
+  in v0.1.0 were fine but identical to v0.1.1 except for the bundled
+  PATH-resolution fix — upgrading is still recommended for the
+  `node`-in-hook fix.
+
+---
+
 ## [0.1.0] — 2026-05-10
 
 Initial public release.
@@ -83,5 +120,6 @@ Inspired by [DraftFrame](https://github.com/intuitive-compute/DraftFrame)
 
 ---
 
-[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/releases/tag/v0.1.0

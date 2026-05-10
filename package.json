@@ -1,6 +1,6 @@
 {
   "name": "claudedeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multi-session Claude Code orchestrator with worktree isolation, agent dispatch, and pipeline awareness.",
   "type": "module",
   "repository": {
