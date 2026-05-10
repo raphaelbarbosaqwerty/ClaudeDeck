@@ -93,24 +93,37 @@ jobs:
       - name: pnpm install
         run: pnpm install --frozen-lockfile
 
-      # tauri-action handles the platform matrix nuances (target flags, bundle
-      # types, code-signing wiring if you add secrets later) and uploads the
-      # produced artifacts directly to the draft release.
+      # tauri-action handles the platform matrix nuances (target flags,
+      # bundle types) and uploads the produced artifacts directly to the
+      # draft release.
+      #
+      # IMPORTANT — code signing is intentionally disabled.
+      #
+      # When tauri-action sees APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY in
+      # the environment, it runs `security import` to load the cert into a
+      # temporary keychain. If those vars are present but EMPTY (which is
+      # what `${{ secrets.X }}` resolves to when the secret is not set in
+      # repo settings), `security import` fails with:
+      #   SecKeychainItemImport: One or more parameters were not valid
+      # and the entire macOS bundle step crashes. So we keep the env block
+      # empty until real signing creds exist.
+      #
+      # When you get an Apple Developer ID and want to ship signed builds:
+      #   1. Add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+      #      APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD,
+      #      APPLE_TEAM_ID as repo secrets in Settings → Secrets.
+      #   2. Uncomment the lines below.
+      #   3. Bump version, tag, push.
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Wire these secrets in repo settings to enable signing/notarization
-          # on macOS and Windows. Without them the build still succeeds, but
-          # users will hit Gatekeeper / SmartScreen warnings on first launch
-          # (see README "Troubleshooting"). Leaving them blank is fine for an
-          # MIT side-project; signing only matters once you distribute widely.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'ClaudeDeck ${{ github.event.inputs.tag || github.ref_name }}'
