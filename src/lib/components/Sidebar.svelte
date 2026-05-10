@@ -1,7 +1,43 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { app } from "../stores/app.svelte";
+  import CategoryPicker from "./CategoryPicker.svelte";
   import Icon from "./Icon.svelte";
+
+  // Category picker popover state. Tracks which workspace's tag-button was
+  // clicked so the popover anchors next to it. `null` means no popover.
+  let categoryFor = $state<string | null>(null);
+  let categoryAnchor = $state<DOMRect | undefined>(undefined);
+
+  // Suggestions are computed from the existing categories on workspaces.
+  // Deduplicate case-insensitively but preserve the casing of the first
+  // occurrence — keeps the user's chosen capitalization stable.
+  let categorySuggestions = $derived.by(() => {
+    const seen = new Map<string, string>();
+    for (const w of app.workspaces) {
+      if (w.category && !seen.has(w.category.toLowerCase())) {
+        seen.set(w.category.toLowerCase(), w.category);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  });
+
+  function openCategoryPicker(wsId: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    const target = (ev.currentTarget as HTMLElement) ?? null;
+    categoryAnchor = target?.getBoundingClientRect();
+    categoryFor = wsId;
+  }
+
+  function closeCategoryPicker() {
+    categoryFor = null;
+    categoryAnchor = undefined;
+  }
+
+  async function applyCategory(category: string | null) {
+    if (!categoryFor) return;
+    await app.setWorkspaceCategory(categoryFor, category);
+  }
 
   let newPath = $state("");
   let adding = $state(false);
@@ -145,6 +181,17 @@
     {#if ws.branch}
       <span class="ws-branch"><Icon name="gitBranch" size={10} /> {ws.branch}</span>
     {/if}
+    {#if depth === 0}
+      <button
+        class="ws-action ws-category"
+        class:has-category={!!ws.category}
+        title={ws.category ? `Category: ${ws.category} — click to change` : "Set category"}
+        aria-label="Set category"
+        onclick={(e) => openCategoryPicker(ws.id, e)}
+      >
+        <Icon name="tag" size={11} />
+      </button>
+    {/if}
     <button
       class="ws-action"
       title="New worktree from this branch"
@@ -208,6 +255,19 @@
   {/if}
 </aside>
 
+{#if categoryFor}
+  {@const ws = app.workspaces.find((w) => w.id === categoryFor)}
+  {#if ws}
+    <CategoryPicker
+      value={ws.category}
+      suggestions={categorySuggestions}
+      anchorRect={categoryAnchor}
+      onApply={applyCategory}
+      onClose={closeCategoryPicker}
+    />
+  {/if}
+{/if}
+
 <style>
   .sidebar {
     width: 100%;
@@ -262,8 +322,8 @@
   .ws-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 7px 6px;
+    gap: 5px;
+    padding: 6px 6px;
     border-radius: var(--radius-sm);
     font-size: 13px;
     color: var(--text-1);
@@ -300,8 +360,26 @@
     line-height: 1;
     flex-shrink: 0;
   }
+  /* Action buttons live in a tight cluster on the right of the row.
+     The first one in the cluster keeps the row's normal gap from the
+     name/branch; the rest sit close together (2px). */
+  .ws-row .ws-action + .ws-action {
+    margin-left: -3px;
+  }
   .ws-action:hover { background: var(--surface-3); color: var(--text-1); }
   .ws-action.danger:hover { background: rgba(227, 93, 106, 0.15); color: var(--red); }
+
+  /* Category button is a primary affordance — keep it visible even when
+     the row isn't hovered, so users can both (a) see at a glance which
+     workspaces are categorized and (b) discover that the icon is
+     clickable in the first place. The +/× actions stay hover-only. */
+  .ws-row .ws-category { opacity: 0.4; }
+  .ws-row:hover .ws-category { opacity: 1; }
+  .ws-row .ws-category.has-category {
+    opacity: 0.85;
+    color: var(--accent);
+  }
+  .ws-row:hover .ws-category.has-category { opacity: 1; }
 
   .inline-form, .add-form {
     display: flex;

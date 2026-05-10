@@ -9,6 +9,10 @@ export interface Workspace {
   kind: WorkspaceKind;
   parentId?: string;
   branch?: string;
+  /// User-assigned grouping label. Free-form (e.g. "Work", "Side projects",
+  /// "Clients · Acme"). Undefined means uncategorized — the UI groups
+  /// these under an "Uncategorized" section by default.
+  category?: string;
 }
 
 export type SessionState =
@@ -31,6 +35,9 @@ export interface Session {
   maxContextTokens: number;
   subagentsTotal: number;
   subagentsActive: number;
+  /// True for auxiliary shell sessions paired with a main Claude session
+  /// in the same tab. Hidden from the right Sessions panel.
+  isAux: boolean;
 }
 
 export type CommandKind = "shell" | "prompt" | "url" | "agent";

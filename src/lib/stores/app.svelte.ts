@@ -61,6 +61,17 @@ class AppStore {
     }
   }
 
+  async setWorkspaceCategory(id: string, category: string | null) {
+    try {
+      const updated = await api.setWorkspaceCategory(id, category);
+      this.workspaces = this.workspaces.map((w) =>
+        w.id === id ? updated : w,
+      );
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
   async startSessionFor(
     workspaceId: string,
     opts: { cols?: number; rows?: number; resumeId?: string } = {},
@@ -77,6 +88,77 @@ class AppStore {
       this.error = String(e);
       return null;
     }
+  }
+
+  /// Auxiliary shell panes anchored to a main Claude session. Each main
+  /// can have any number of aux shells, all rendered as columns inside a
+  /// single bottom strip below the main terminal. Adding a new shell just
+  /// appends another column; closing one removes it and the strip
+  /// reflows. The strip's height is shared across all auxes of a main.
+  ///
+  /// Map shape: mainSessionId -> { auxSessionIds: [...], stripHeight }.
+  /// Order in `auxSessionIds` is left-to-right rendering order.
+  ///
+  /// Aux PTYs die with the app — there's no auto-resume for shell aux
+  /// because they're not Claude sessions. User reopens what they need.
+  auxByMain = $state<Record<string, { auxSessionIds: string[]; stripHeight: number }>>({});
+
+  /// Add a new auxiliary shell column to the bottom strip of the given
+  /// main session. Multiple calls stack columns side-by-side.
+  async addAuxFor(mainSessionId: string, cols = 80, rows = 12) {
+    const main = this.sessions.find((s) => s.id === mainSessionId);
+    if (!main) return;
+    try {
+      const aux = await api.createSession(
+        main.workspaceId,
+        cols,
+        rows,
+        true /* useShell */,
+        undefined,
+        true /* isAux */,
+      );
+      this.sessions = [...this.sessions, aux];
+      const existing = this.auxByMain[mainSessionId];
+      this.auxByMain = {
+        ...this.auxByMain,
+        [mainSessionId]: existing
+          ? {
+              auxSessionIds: [...existing.auxSessionIds, aux.id],
+              stripHeight: existing.stripHeight,
+            }
+          : {
+              auxSessionIds: [aux.id],
+              stripHeight: 220,
+            },
+      };
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  /// Close one specific aux pane. The strip reflows; if it was the last
+  /// aux for that main, the entire strip disappears.
+  async closeAux(mainSessionId: string, auxSessionId: string) {
+    const entry = this.auxByMain[mainSessionId];
+    if (!entry) return;
+    await this.closeSession(auxSessionId);
+    const remaining = entry.auxSessionIds.filter((id) => id !== auxSessionId);
+    const next = { ...this.auxByMain };
+    if (remaining.length === 0) {
+      delete next[mainSessionId];
+    } else {
+      next[mainSessionId] = { ...entry, auxSessionIds: remaining };
+    }
+    this.auxByMain = next;
+  }
+
+  setAuxStripHeight(mainSessionId: string, height: number) {
+    const entry = this.auxByMain[mainSessionId];
+    if (!entry) return;
+    this.auxByMain = {
+      ...this.auxByMain,
+      [mainSessionId]: { ...entry, stripHeight: height },
+    };
   }
 
   async closeSession(sessionId: string) {

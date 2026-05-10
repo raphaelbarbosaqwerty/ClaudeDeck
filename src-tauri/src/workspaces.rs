@@ -17,9 +17,24 @@ struct WorkspacesFile {
 
 const SCHEMA_VERSION: u32 = 1;
 
-pub fn config_path() -> PathBuf {
+/// Root directory for all of claudedeck's persisted state. Honors a
+/// `CLAUDEDECK_CONFIG_DIR` environment override so a developer can run an
+/// isolated dev build side-by-side with the installed production app
+/// without the two stepping on each other's `workspaces.json`,
+/// `toolkits/`, etc. When the env var is unset (the default for installed
+/// builds), we fall back to the OS-standard config directory.
+pub fn config_base_dir() -> PathBuf {
+    if let Ok(custom) = std::env::var("CLAUDEDECK_CONFIG_DIR") {
+        if !custom.is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("claudedeck").join("workspaces.json")
+    base.join("claudedeck")
+}
+
+pub fn config_path() -> PathBuf {
+    config_base_dir().join("workspaces.json")
 }
 
 pub fn load(path: &Path) -> Result<Vec<Workspace>> {
@@ -80,9 +95,29 @@ pub fn add_workspace(state: State<AppState>, path: String) -> Result<Workspace, 
         kind: WorkspaceKind::Project,
         parent_id: None,
         branch,
+        category: None,
     };
 
     state.add_workspace(ws.clone());
+    save(&state.config_path, &state.list_workspaces()).map_err(|e| e.to_string())?;
+    Ok(ws)
+}
+
+/// Set or clear the user-assigned category on a workspace. Pass an empty
+/// string or null to clear.
+#[tauri::command]
+pub fn set_workspace_category(
+    state: State<AppState>,
+    id: String,
+    category: Option<String>,
+) -> Result<Workspace, String> {
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let mut ws = state.get_workspace(&uuid).ok_or("Workspace not found")?;
+    let normalized = category
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty());
+    ws.category = normalized;
+    state.add_workspace(ws.clone()); // overwrites by same id
     save(&state.config_path, &state.list_workspaces()).map_err(|e| e.to_string())?;
     Ok(ws)
 }
@@ -128,6 +163,10 @@ pub fn create_worktree(
         kind: WorkspaceKind::Worktree,
         parent_id: Some(parent.id),
         branch: Some(name),
+        // Worktrees inherit their parent project's category by default —
+        // they're conceptually "the same project, different branch", so
+        // grouping them together in the panel matches mental model.
+        category: parent.category.clone(),
     };
     state.add_workspace(ws.clone());
     save(&state.config_path, &state.list_workspaces()).map_err(|e| e.to_string())?;
@@ -178,6 +217,7 @@ mod tests {
             kind: WorkspaceKind::Project,
             parent_id: None,
             branch: Some("main".into()),
+            category: None,
         }]
     }
 
@@ -236,5 +276,70 @@ mod tests {
     #[test]
     fn expand_path_absolute_unchanged() {
         assert_eq!(expand_path("/abs"), "/abs");
+    }
+
+    /// Helper that normalizes a category the same way `set_workspace_category`
+    /// does — extracted into the test module so we can assert the shaping
+    /// without spinning up Tauri State. Mirrors the production code one-to-one.
+    fn normalize_category(category: Option<String>) -> Option<String> {
+        category
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+    }
+
+    #[test]
+    fn normalize_category_trims_whitespace() {
+        assert_eq!(
+            normalize_category(Some("  Work  ".into())),
+            Some("Work".into())
+        );
+    }
+
+    #[test]
+    fn normalize_category_empty_string_becomes_none() {
+        assert_eq!(normalize_category(Some("".into())), None);
+    }
+
+    #[test]
+    fn normalize_category_only_whitespace_becomes_none() {
+        // Pure whitespace shouldn't create a "ghost" category that would
+        // confuse the autocomplete in the picker.
+        assert_eq!(normalize_category(Some("   ".into())), None);
+    }
+
+    #[test]
+    fn normalize_category_passthrough_for_real_values() {
+        assert_eq!(
+            normalize_category(Some("Side Projects".into())),
+            Some("Side Projects".into())
+        );
+    }
+
+    #[test]
+    fn normalize_category_none_stays_none() {
+        assert_eq!(normalize_category(None), None);
+    }
+
+    /// Tests for `config_base_dir` honoring the env override. We mutate
+    /// the process env around each test, so they run sequentially via
+    /// `cargo test -- --test-threads=1` if you want strict isolation —
+    /// or just don't run two of these in parallel.
+    #[test]
+    fn config_base_dir_uses_env_override_when_set() {
+        let unique = format!("/tmp/claudedeck-cfg-{}", Uuid::new_v4());
+        std::env::set_var("CLAUDEDECK_CONFIG_DIR", &unique);
+        assert_eq!(config_base_dir().to_string_lossy(), unique);
+        std::env::remove_var("CLAUDEDECK_CONFIG_DIR");
+    }
+
+    #[test]
+    fn config_base_dir_ignores_empty_env_override() {
+        std::env::set_var("CLAUDEDECK_CONFIG_DIR", "");
+        let path = config_base_dir();
+        // Empty env should NOT be honored — falls back to standard config dir.
+        // We can't assert the exact path (varies by OS) but it must end in
+        // "claudedeck" because that's the suffix the fallback applies.
+        assert!(path.ends_with("claudedeck"));
+        std::env::remove_var("CLAUDEDECK_CONFIG_DIR");
     }
 }

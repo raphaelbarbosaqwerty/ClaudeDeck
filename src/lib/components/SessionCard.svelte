@@ -54,6 +54,10 @@
 
   <span
     class="avatar"
+    class:state-thinking={session.state === 'thinking'}
+    class:state-generating={session.state === 'generating'}
+    class:state-userInput={session.state === 'userInput'}
+    class:state-needsAttention={session.state === 'needsAttention'}
     style="background-image: url('{avatarUri}');"
   ></span>
 
@@ -154,6 +158,63 @@
     background-position: center;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    /* Animations only kick in on non-idle states; calm by default so a
+       wall of sessions doesn't jitter the user's peripheral vision. */
+    transition: filter 200ms, transform 200ms;
+  }
+
+  /* Thinking — very subtle inhale/exhale. The avatar appears to "consider". */
+  .avatar.state-thinking {
+    animation: cd-breathe 1.6s ease-in-out infinite;
+    filter: drop-shadow(0 0 4px rgba(224, 194, 92, 0.4));
+  }
+  @keyframes cd-breathe {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+
+  /* Generating — stronger pulse + green glow. The avatar feels "alive". */
+  .avatar.state-generating {
+    animation: cd-pulse 1.1s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px rgba(95, 191, 111, 0.55));
+  }
+  @keyframes cd-pulse {
+    0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 4px rgba(95, 191, 111, 0.4)); }
+    50%      { transform: scale(1.08); filter: drop-shadow(0 0 10px rgba(95, 191, 111, 0.7)); }
+  }
+
+  /* User input — gentle nod, like the avatar is waiting attentively. */
+  .avatar.state-userInput {
+    animation: cd-nod 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 4px rgba(255, 140, 66, 0.4));
+  }
+  @keyframes cd-nod {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-1.5px); }
+  }
+
+  /* Needs attention — short shake every couple of seconds. Eye-catching
+     without being annoying. */
+  .avatar.state-needsAttention {
+    animation: cd-shake 2.4s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px rgba(227, 93, 106, 0.6));
+  }
+  @keyframes cd-shake {
+    0%, 100%        { transform: translateX(0); }
+    2%, 6%, 10%     { transform: translateX(-1.5px); }
+    4%, 8%          { transform: translateX(1.5px); }
+    14%             { transform: translateX(0); }
+  }
+
+  /* Reduced motion users opt out of all the animation entirely — the color
+     ring on the status row already conveys state. */
+  @media (prefers-reduced-motion: reduce) {
+    .avatar.state-thinking,
+    .avatar.state-generating,
+    .avatar.state-userInput,
+    .avatar.state-needsAttention {
+      animation: none;
+    }
   }
 
   .body { flex: 1; min-width: 0; }

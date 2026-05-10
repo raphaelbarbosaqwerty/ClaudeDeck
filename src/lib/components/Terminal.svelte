@@ -7,6 +7,8 @@
   import "@xterm/xterm/css/xterm.css";
   import { api } from "../api";
   import { app } from "../stores/app.svelte";
+  import { settings } from "../stores/settings.svelte";
+  import { getPreset, withOpacity } from "../utils/themes";
 
   type Props = {
     sessionId: string;
@@ -55,30 +57,14 @@
       lineHeight: 1.2,
       cursorBlink: true,
       allowProposedApi: true,
-      theme: {
-        background: "#0e0e10",
-        foreground: "#e8e8ea",
-        cursor: "#ff8c42",
-        cursorAccent: "#0e0e10",
-        selectionBackground: "#3a3a4a",
-        // ANSI palette tuned to ClaudeDeck's accent colors.
-        black: "#1c1c23",
-        red: "#e35d6a",
-        green: "#5fbf6f",
-        yellow: "#e0c25c",
-        blue: "#5fb5d8",
-        magenta: "#b48bff",
-        cyan: "#5fb5d8",
-        white: "#e8e8ea",
-        brightBlack: "#6c6c78",
-        brightRed: "#ff7785",
-        brightGreen: "#7fdc8f",
-        brightYellow: "#ffd97a",
-        brightBlue: "#7fc8e8",
-        brightMagenta: "#c8a8ff",
-        brightCyan: "#7fc8e8",
-        brightWhite: "#ffffff",
-      },
+      // Pull initial theme from the active preset + opacity. If the user
+      // changes either later, the $effect below pushes the new theme
+      // into xterm without remounting.
+      allowTransparency: true,
+      theme: withOpacity(
+        getPreset(settings.terminalPreset).theme,
+        settings.backgroundOpacity,
+      ),
     });
 
     fit = new FitAddon();
@@ -144,6 +130,17 @@
     }
   });
 
+  // Reactive theme application: whenever the user changes preset or
+  // opacity in Settings, xterm gets the new ITheme. xterm does the work
+  // of repainting cells with the new palette — no remount, no flicker.
+  $effect(() => {
+    const presetId = settings.terminalPreset;
+    const opacity = settings.backgroundOpacity;
+    if (!term) return;
+    const next = withOpacity(getPreset(presetId).theme, opacity);
+    term.options.theme = next;
+  });
+
   // Force-redraw recovery — wired to ⌘⇧R from +page.svelte. When Claude's
   // TUI gets out of sync (cursor positioning artifacts, half-overwritten
   // lines), this resync sequence usually clears the corruption:
@@ -176,18 +173,29 @@
   class="term-host"
   class:hidden={!visible}
   aria-hidden={!visible}
+  style="padding: {settings.terminalPadding}px;"
 ></div>
 
 <style>
   /* Stack every terminal on top of each other inside the parent. We toggle
      `visibility` instead of `display` so xterm always sees the correct
      measured size — even for inactive tabs. Switching tabs is then a paint,
-     not a re-layout, and the PTY column count stays in sync. */
+     not a re-layout, and the PTY column count stays in sync.
+     The host floats inside `.terminal-area` with a small outer inset and
+     rounded corners so the terminal reads as a discrete card the way
+     Apple Terminal and iTerm windows do, rather than a full-bleed
+     surface that hugs the splitters. */
   .term-host {
     position: absolute;
     inset: 0;
-    padding: 8px;
     background: var(--bg);
+    /* No border-radius: xterm renders into its own canvas/DOM that
+       doesn't respect the parent's rounded clipping, so rounding the
+       host only rounds an "envelope" around a still-rectangular
+       terminal — visible mismatch in light theme. Keeping the host
+       full-bleed is honest. Internal padding (set inline from the
+       user's settings) gives xterm's text breathing room without
+       lying about the shape. */
   }
   .term-host.hidden {
     visibility: hidden;

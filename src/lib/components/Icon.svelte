@@ -40,6 +40,7 @@
   import LinkSimple from "phosphor-svelte/lib/LinkSimple";
   import FilePlus from "phosphor-svelte/lib/FilePlus";
   import Trash from "phosphor-svelte/lib/Trash";
+  import Tag from "phosphor-svelte/lib/Tag";
 
   const REGISTRY: Record<string, Component<any>> = {
     folder: Folder,
@@ -74,6 +75,7 @@
     linkSimple: LinkSimple,
     filePlus: FilePlus,
     trash: Trash,
+    tag: Tag,
   };
 
   type Props = {

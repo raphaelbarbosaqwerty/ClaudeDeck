@@ -16,6 +16,13 @@ pub struct Workspace {
     /// Git branch checked out at `path` (None for non-git folders).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// User-assigned category, e.g. "Work", "Side projects", "Clients".
+    /// None means uncategorized — the UI groups these under a default
+    /// "Uncategorized" section. Free-form so users aren't constrained
+    /// to a fixed enum; the frontend autocompletes from existing values
+    /// to discourage near-duplicates ("Work" vs "work").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,6 +68,13 @@ pub struct Session {
     pub subagents_total: u32,
     /// Subagents currently running (no tool_result yet).
     pub subagents_active: u32,
+    /// True for "auxiliary shell" sessions — secondary pane spawned beside
+    /// the main Claude session in the same tab, running the user's
+    /// default shell (zsh/bash) instead of `claude`. The UI hides these
+    /// from the right-hand Sessions panel; they're tab-scoped utilities,
+    /// not work units.
+    #[serde(default)]
+    pub is_aux: bool,
 }
 
 impl Session {
@@ -78,6 +92,7 @@ impl Session {
             max_context_tokens: 200_000,
             subagents_total: 0,
             subagents_active: 0,
+            is_aux: false,
         }
     }
 }
@@ -214,6 +229,48 @@ mod tests {
     }
 
     #[test]
+    fn session_new_defaults_is_aux_false() {
+        // Aux flag must default to false so existing call sites that don't
+        // explicitly pass it don't accidentally produce shell sessions.
+        let s = Session::new(Uuid::new_v4(), "main".into());
+        assert!(!s.is_aux, "Session::new must default is_aux to false");
+    }
+
+    #[test]
+    fn session_serializes_is_aux_camel_case() {
+        let mut s = Session::new(Uuid::new_v4(), "shell".into());
+        s.is_aux = true;
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v.get("isAux"), Some(&serde_json::json!(true)));
+        // The non-renamed key must NOT appear, otherwise the frontend's
+        // camelCase consumer wouldn't see the value.
+        assert!(v.get("is_aux").is_none());
+    }
+
+    #[test]
+    fn session_deserializes_missing_is_aux_as_false() {
+        // When loading sessions saved before the is_aux field existed (or
+        // serialized by code that omits it), the default-on-missing serde
+        // behavior must kick in — otherwise older payloads break.
+        let raw = serde_json::json!({
+            "id": Uuid::new_v4(),
+            "workspaceId": Uuid::new_v4(),
+            "name": "old",
+            "state": "idle",
+            "model": "sonnet",
+            "cost": 0.0,
+            "tokensIn": 0,
+            "tokensOut": 0,
+            "contextTokens": 0,
+            "maxContextTokens": 200_000,
+            "subagentsTotal": 0,
+            "subagentsActive": 0,
+        });
+        let s: Session = serde_json::from_value(raw).unwrap();
+        assert!(!s.is_aux);
+    }
+
+    #[test]
     fn workspace_skips_parent_id_when_none() {
         let ws = Workspace {
             id: Uuid::new_v4(),
@@ -222,15 +279,38 @@ mod tests {
             kind: WorkspaceKind::Project,
             parent_id: None,
             branch: None,
+            category: None,
         };
         let v = serde_json::to_value(&ws).unwrap();
         let obj = v.as_object().unwrap();
         assert!(!obj.contains_key("parentId"), "parentId should be skipped when None");
         assert!(!obj.contains_key("branch"), "branch should be skipped when None");
+        assert!(!obj.contains_key("category"), "category should be skipped when None");
         // camelCase confirmation
         assert!(obj.contains_key("id"));
         assert!(obj.contains_key("name"));
         assert!(obj.contains_key("kind"));
+
+        // Scope this assertion to a follow-up test below to keep this one focused.
+    }
+
+    #[test]
+    fn workspace_includes_category_when_some() {
+        // Sanity check that a non-None category does land in the JSON, with
+        // the camelCase rename and the literal value the user picked. Empty
+        // strings would be a bug — the workspaces.rs command normalizes
+        // empty/whitespace to None before this struct is built.
+        let ws = Workspace {
+            id: Uuid::new_v4(),
+            name: "proj".into(),
+            path: "/tmp/proj".into(),
+            kind: WorkspaceKind::Project,
+            parent_id: None,
+            branch: None,
+            category: Some("Work".into()),
+        };
+        let v = serde_json::to_value(&ws).unwrap();
+        assert_eq!(v.get("category"), Some(&serde_json::json!("Work")));
     }
 
     #[test]
@@ -243,6 +323,7 @@ mod tests {
             kind: WorkspaceKind::Worktree,
             parent_id: Some(parent),
             branch: Some("feature".into()),
+            category: Some("Work".into()),
         };
         let v = serde_json::to_value(&ws).unwrap();
         let obj = v.as_object().unwrap();

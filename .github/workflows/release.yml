@@ -118,6 +118,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Auto-updater signing is intentionally disabled. When the env
+          # vars TAURI_SIGNING_PRIVATE_KEY{,_PASSWORD} are present (even
+          # if empty), tauri-action tries to sign update artifacts and
+          # fails. They'll be re-enabled along with the updater plugin
+          # in a future release — see docs/AUTO_UPDATE_SETUP.md.
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

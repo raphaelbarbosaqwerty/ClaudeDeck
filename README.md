@@ -31,7 +31,16 @@ If you're on macOS only and want a pure-Swift implementation, **DraftFrame remai
   <img src="docs/screenshots/02-active-session.png" alt="Active session with agent activity" width="48%" />
   <img src="docs/screenshots/04-worktree.png" alt="Worktree session" width="48%" />
   <img src="docs/screenshots/03-light-theme.png" alt="Light theme" width="48%" />
+  <img src="docs/screenshots/05-settings.png" alt="Settings: theme presets, opacity, padding, vibrancy" width="80%" />
+  <img src="docs/screenshots/06-shell-panes.png" alt="Auxiliary shell panes side-by-side at the bottom" width="80%" />
 </div>
+
+> v0.2.0+ adds: 8 terminal theme presets with live preview, background
+> opacity slider, terminal padding control, macOS native vibrancy toggle,
+> and **auxiliary shell panes** — click `▦ Shell` and a zsh/bash column
+> appears below the active Claude session. Click again to add another.
+> Run `npm run dev`, `supabase db start`, `tail -f logs/app.log` side by
+> side without losing your Claude conversation.
 
 ---
 

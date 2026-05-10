@@ -14,6 +14,107 @@ release. Move these into a versioned section when cutting a new release.
 
 ---
 
+## [0.2.0] — 2026-05-10
+
+Big polish + features release. The core multi-session orchestrator now
+has serious organization, customization, and ergonomics work. Categories,
+themes, mascot animations, shell side-panes — the kind of stuff that
+turns "useful tool" into "tool I keep open all day."
+
+### ✨ Features
+
+- **Workspace categories.** Tag any workspace with a free-form label
+  ("Work", "Side projects", "Clients · Acme"). The right-hand Sessions
+  panel groups by category, with collapsible section headers, live-count
+  badges, and "Uncategorized" pinned at the bottom. Picker is a combobox
+  that autocompletes from your existing categories so you don't end up
+  with `Work` / `work` / `WORK` fragmentation. Worktrees inherit their
+  parent project's category automatically.
+- **Live sessions float to the top.** Within each category section,
+  groups with at least one running session sort above dormant ones —
+  your active work never gets buried among placeholder/resume cards.
+- **Settings modal** (gear icon next to the theme toggle). Three sections:
+  - 8 terminal theme presets: ClaudeDeck, Dracula, One Dark, Tokyo
+    Night, Catppuccin Mocha, Solarized Dark, GitHub Dark, Nord. Live
+    preview swatches, instant apply.
+  - Background opacity slider (50–100%, applies as rgba alpha to the
+    xterm background).
+  - Terminal padding (4–32px, default 4px — keeps the layout dense).
+  - macOS vibrancy toggle: native NSVisualEffectView blur showing the
+    desktop wallpaper through the window. No-op on Windows/Linux.
+  - Auto-resume on launch + desktop notifications toggles (moved from
+    implicit defaults to explicit user-controlled settings).
+- **Auxiliary shell panes.** Click `▦ Shell` in the bottom status bar
+  and a real `zsh`/`bash` column drops into a strip below the active
+  Claude session. Click again to add another column side-by-side. Each
+  column has its own PTY in the workspace's `cwd`, perfect for
+  `npm run dev`, `supabase db start`, `tail -f logs`, etc. without
+  leaving Claude. Drag the resizer to adjust strip height; close
+  individual columns and the strip reflows. Aux panes are tab-scoped
+  (each main session has its own set), hidden from the sessions panel
+  and cost roll-up since they're not work units.
+- **Mascot animations.** The procedural pixel-art avatars now react to
+  state — gentle breathe on `Thinking`, stronger pulse + green glow on
+  `Generating`, soft nod on `userInput`, alarm-shake on
+  `needsAttention`. Respects `prefers-reduced-motion`.
+- **Phosphor icon library.** Replaced ad-hoc emoji + inline SVGs with a
+  consistent semantic icon set (folder, gitBranch, plus, x, terminal,
+  toolbox, hammer, flask, magnifyingGlass, plant, etc.). Backend now
+  emits semantic icon names for auto-discovered agents and pipeline
+  signals, frontend resolves to actual Phosphor components.
+
+### 🛠 Developer experience
+
+- **`CLAUDEDECK_CONFIG_DIR` env override.** Run an isolated dev build
+  side-by-side with the installed app:
+  ```bash
+  CLAUDEDECK_CONFIG_DIR="$HOME/.config/claudedeck-dev" pnpm tauri dev
+  ```
+  The dev instance reads/writes its own `workspaces.json` and `toolkits/`,
+  so feature testing never touches your real workspace state.
+- **`pnpm bump` script** (`scripts/bump-version.mjs`). Synchronizes the
+  three places Tauri reads the version (`package.json`,
+  `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`) so future
+  releases can't drift.
+
+### 🔧 Internal
+
+- **Test coverage**: 134 tests passing (was 87 before — added 47).
+  - Rust: `Workspace.category` serde, `Session.is_aux` defaults +
+    serialization, `normalize_category` (whitespace, empty, etc.),
+    `config_base_dir` env override.
+  - Frontend (Vitest): all 8 theme presets validated for shape +
+    color format, `getPreset` fallback, `withOpacity` math, settings
+    store clamping (opacity 0.5–1.0, padding 4–32px), localStorage
+    persistence.
+- **Package metadata**: README updated with screenshots covering the
+  Settings modal and multi-shell aux panes.
+- **CI release workflow**: Apple signing env vars stay commented out
+  pending Developer ID setup. The previously-added Tauri auto-updater
+  signing block is also commented out (the auto-updater feature is
+  deferred to a future release — see `docs/AUTO_UPDATE_SETUP.md`).
+
+### 📝 Notes
+
+- **Auto-updater is deferred**, not removed. The full scaffolding doc
+  lives at `docs/AUTO_UPDATE_SETUP.md`. Wiring it up requires generating
+  a tauri-signer keypair + adding two GitHub secrets, which we've held
+  for a future release. Existing v0.1.x users will need to download
+  v0.2.0 manually one more time. Subsequent versions can be auto-updated
+  once the updater plugin is reintroduced with a real pubkey.
+- **Homebrew tap setup doc** lives at `docs/HOMEBREW.md` for whenever
+  the project's ready to publish a `brew install --cask` formula.
+- macOS users: same `xattr -cr /Applications/claudedeck.app` dance as
+  before applies to v0.2.0 since builds remain unsigned.
+
+### 🙏 Acknowledgments
+
+Inspired (still!) by [DraftFrame](https://github.com/intuitive-compute/DraftFrame).
+The mascot pixel-art convention, the worktree-per-session approach, and
+the right-hand sessions panel all owe their existence to that project.
+
+---
+
 ## [0.1.2] — 2026-05-10
 
 Patch release fixing terminal-rendering corruption that affected sessions
@@ -158,7 +259,8 @@ Inspired by [DraftFrame](https://github.com/intuitive-compute/DraftFrame)
 
 ---
 
-[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/releases/tag/v0.1.0

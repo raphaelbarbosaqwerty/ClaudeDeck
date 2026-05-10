@@ -2,11 +2,16 @@
   import { onMount } from "svelte";
   import "../lib/theme.css";
   import { app } from "../lib/stores/app.svelte";
-  import { settings, applyThemeToDocument } from "../lib/stores/settings.svelte";
+  import {
+    settings,
+    applyThemeToDocument,
+    applyVibrancyToDocument,
+  } from "../lib/stores/settings.svelte";
   import Icon from "../lib/components/Icon.svelte";
   import Sidebar from "../lib/components/Sidebar.svelte";
   import SessionsPanel from "../lib/components/SessionsPanel.svelte";
   import SessionStatusBar from "../lib/components/SessionStatusBar.svelte";
+  import Settings from "../lib/components/Settings.svelte";
   import Splitter from "../lib/components/Splitter.svelte";
   import Terminal from "../lib/components/Terminal.svelte";
   import ToolkitPanel from "../lib/components/ToolkitPanel.svelte";
@@ -52,6 +57,10 @@
 
   onMount(async () => {
     applyThemeToDocument(settings.theme);
+    // Re-apply persisted vibrancy on boot so toggling it once survives
+    // restarts. Wrapped — applyVibrancyToDocument is async and we don't
+    // want a failed Tauri invoke to block the rest of init.
+    void applyVibrancyToDocument(settings.useVibrancy);
     await app.initDragDropListener();
     await app.refreshWorkspaces();
     await app.autoResumeRecent();
@@ -91,6 +100,13 @@
     app.sessions.find((s) => s.id === app.activeSessionId) ?? null,
   );
 
+  /// Aux strip metadata for the active session (or undefined when none).
+  /// Lives in script so the markup can reference it without a top-level
+  /// `{@const}` (Svelte 5 forbids those outside specific block kinds).
+  let auxStrip = $derived(
+    activeSession ? app.auxByMain[activeSession.id] : undefined,
+  );
+
   function workspaceFor(workspaceId: string) {
     return app.workspaces.find((w) => w.id === workspaceId);
   }
@@ -101,8 +117,39 @@
     }
   }
 
+  // Vertical resize of the aux shell strip. We track the pointer delta
+  // against the strip's current height and clamp to a sane range so the
+  // user can't shrink it past usability or grow it past the main pane.
+  let auxResizing = $state<{ mainId: string; startY: number; startH: number } | null>(null);
+
+  function startAuxResize(e: PointerEvent, mainId: string) {
+    const entry = app.auxByMain[mainId];
+    if (!entry) return;
+    auxResizing = { mainId, startY: e.clientY, startH: entry.stripHeight };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  }
+
+  function onAuxResizeMove(e: PointerEvent) {
+    if (!auxResizing) return;
+    // Pointer dragging up should grow the strip; pointer down shrinks it.
+    const dy = auxResizing.startY - e.clientY;
+    const target = Math.max(80, Math.min(600, auxResizing.startH + dy));
+    app.setAuxStripHeight(auxResizing.mainId, target);
+  }
+
+  function endAuxResize(e: PointerEvent) {
+    if (!auxResizing) return;
+    auxResizing = null;
+    (e.target as HTMLElement)?.releasePointerCapture?.(e.pointerId);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }
+
   // Toolkit panel state. We open it for whichever session is active right now.
   let toolkitOpen = $state(false);
+  let settingsOpen = $state(false);
   let activeWorkspace = $derived(
     activeSession ? workspaceFor(activeSession.workspaceId) ?? null : null,
   );
@@ -129,7 +176,11 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window
+  onkeydown={onKeydown}
+  onpointermove={onAuxResizeMove}
+  onpointerup={endAuxResize}
+/>
 
 <div
   class="shell"
@@ -142,7 +193,7 @@
 
   <main class="center">
     <div class="tabs">
-      {#each app.sessions as session, i (session.id)}
+      {#each app.sessions.filter((s) => !s.isAux) as session, i (session.id)}
         {@const ws = workspaceFor(session.workspaceId)}
         <button
           class="tab"
@@ -181,22 +232,35 @@
         </button>
       {/each}
 
-      {#if app.sessions.length === 0}
+      {#if app.sessions.filter((s) => !s.isAux).length === 0}
         <span class="tab-empty">No active sessions</span>
       {/if}
 
-      <button
-        class="theme-toggle"
-        onclick={() => settings.toggleTheme()}
-        title={`Switch to ${settings.theme === "dark" ? "light" : "dark"} theme`}
-        aria-label="Toggle theme"
-      >
-        <Icon name={settings.theme === "dark" ? "sun" : "moon"} size={14} />
-      </button>
+      <div class="tabs-actions">
+        <button
+          class="tabs-action"
+          onclick={() => settings.toggleTheme()}
+          title={`Switch to ${settings.theme === "dark" ? "light" : "dark"} theme`}
+          aria-label="Toggle theme"
+        >
+          <Icon name={settings.theme === "dark" ? "sun" : "moon"} size={14} />
+        </button>
+        <button
+          class="tabs-action"
+          onclick={() => (settingsOpen = true)}
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <Icon name="wrench" size={14} />
+        </button>
+      </div>
     </div>
 
-    <div class="terminal-area">
-      {#if app.sessions.length === 0}
+    <div
+      class="terminal-area"
+      style={auxStrip ? `--aux-h: ${auxStrip.stripHeight}px` : ""}
+    >
+      {#if app.sessions.filter((s) => !s.isAux).length === 0}
         <div class="welcome">
           <h2>Welcome to ClaudeDeck</h2>
           <p>
@@ -210,12 +274,56 @@
           {/if}
         </div>
       {:else}
-        {#each app.sessions as session (session.id)}
-          <Terminal
-            sessionId={session.id}
-            visible={session.id === app.activeSessionId}
-          />
-        {/each}
+        <!-- Main pane: all non-aux terminals stacked, only the active one
+             visible. Sits above the aux strip (if any) via CSS grid. -->
+        <div class="main-pane">
+          {#each app.sessions.filter((s) => !s.isAux) as session (session.id)}
+            <Terminal
+              sessionId={session.id}
+              visible={session.id === app.activeSessionId}
+            />
+          {/each}
+        </div>
+
+        <!-- Aux strip: only renders for the currently active main session.
+             Each aux session is its own column inside the strip; resizing
+             the strip changes the height shared by all columns. -->
+        {#if auxStrip}
+          {@const mainId = activeSession!.id}
+          <div
+            class="aux-resizer"
+            role="separator"
+            aria-orientation="horizontal"
+            onpointerdown={(e) => startAuxResize(e, mainId)}
+          ></div>
+          <div class="aux-strip">
+            {#each auxStrip.auxSessionIds as auxId, i (auxId)}
+              {#if i > 0}
+                <div class="aux-col-divider"></div>
+              {/if}
+              <div class="aux-col">
+                <div class="aux-col-header">
+                  <span class="aux-label">shell {i + 1}</span>
+                  <button
+                    class="aux-close"
+                    title="Close shell"
+                    aria-label="Close shell"
+                    onclick={() => app.closeAux(mainId, auxId)}
+                  >×</button>
+                </div>
+                <div class="aux-col-body">
+                  <!-- We render every aux terminal in the app, but mark only
+                       the ones in the active main's strip as visible. The
+                       rest stay mounted (preserving their scrollback) but
+                       hidden via the visible prop. -->
+                  {#each app.sessions.filter((s) => s.isAux && s.id === auxId) as auxSession (auxSession.id)}
+                    <Terminal sessionId={auxSession.id} visible={true} />
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </div>
 
@@ -244,6 +352,10 @@
     sessionId={activeSession?.id}
     onClose={() => (toolkitOpen = false)}
   />
+{/if}
+
+{#if settingsOpen}
+  <Settings onClose={() => (settingsOpen = false)} />
 {/if}
 
 <style>
@@ -295,15 +407,29 @@
   .tab[draggable="true"] { cursor: grab; }
   .tab[draggable="true"]:active { cursor: grabbing; }
 
-  .theme-toggle {
+  /* Action cluster pinned to the right of the tabs bar. Wrapping both
+     buttons in a single container with `margin-left: auto` keeps them
+     glued together (gap: 2px) instead of each grabbing its own slice of
+     the flex free space — which is what was making the theme toggle and
+     gear drift apart and visually shift after re-renders. */
+  .tabs-actions {
     margin-left: auto;
-    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .tabs-action {
+    padding: 4px 8px;
     border-radius: var(--radius-sm);
     font-size: 14px;
     line-height: 1;
     color: var(--text-3);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
   }
-  .theme-toggle:hover {
+  .tabs-action:hover {
     background: var(--surface-2);
     color: var(--text-1);
   }
@@ -341,6 +467,82 @@
     position: relative;
     background: var(--bg);
     overflow: hidden;
+    /* Grid layout splits the area into the main terminal and an
+       optional aux shell strip below. The strip's height is driven by
+       the --aux-h CSS variable (set inline from the user's drag). When
+       there's no aux open, the second row is `0` and main fills the
+       whole area. */
+    display: grid;
+    grid-template-rows: 1fr auto auto;
+    grid-template-areas:
+      "main"
+      "resizer"
+      "aux";
+  }
+  .main-pane {
+    grid-area: main;
+    position: relative;
+    min-height: 0;
+  }
+  .aux-resizer {
+    grid-area: resizer;
+    height: 5px;
+    background: var(--border);
+    cursor: row-resize;
+    flex-shrink: 0;
+  }
+  .aux-resizer:hover { background: var(--accent); }
+  .aux-strip {
+    grid-area: aux;
+    height: var(--aux-h, 220px);
+    display: flex;
+    flex-direction: row;
+    background: var(--surface-1);
+    overflow: hidden;
+  }
+  .aux-col {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .aux-col-divider {
+    width: 1px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .aux-col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 22px;
+    padding: 0 8px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .aux-close {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    background: transparent;
+    color: var(--text-3);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .aux-close:hover { background: var(--surface-3); color: var(--text-1); }
+  .aux-col-body {
+    flex: 1;
+    position: relative;
+    min-height: 0;
   }
 
   .welcome {

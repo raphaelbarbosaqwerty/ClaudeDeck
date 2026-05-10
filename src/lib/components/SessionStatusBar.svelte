@@ -158,6 +158,19 @@
       </div>
     {/if}
 
+    <!-- Add an auxiliary shell pane to the active session's bottom strip.
+         Each click adds another column; the strip auto-grows the first
+         time. -->
+    <button
+      class="toolkit-btn"
+      onclick={() => app.addAuxFor(session.id)}
+      title="Open a shell pane below the terminal"
+      aria-label="Add shell pane"
+    >
+      <Icon name="terminal" size={13} />
+      <span class="label">Shell</span>
+    </button>
+
     <!-- Right: toolkit opener with kbd hint. -->
     <button class="toolkit-btn" onclick={onOpenToolkit} title="Open toolkit (⌘K)">
       <Icon name="toolbox" size={13} />

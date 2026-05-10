@@ -33,6 +33,11 @@ export const api = {
   // ---- workspaces ----
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
   addWorkspace: (path: string) => invoke<Workspace>("add_workspace", { path }),
+  setWorkspaceCategory: (id: string, category: string | null) =>
+    invoke<Workspace>("set_workspace_category", {
+      id,
+      category: category ?? null,
+    }),
   removeWorkspace: (id: string) => invoke<void>("remove_workspace", { id }),
   listWorktreesFor: (id: string) =>
     invoke<WorktreeEntry[]>("list_worktrees_for", { id }),
@@ -51,6 +56,7 @@ export const api = {
     rows: number,
     useShell = false,
     resumeId?: string,
+    isAux = false,
   ) =>
     invoke<Session>("create_session", {
       workspaceId,
@@ -58,6 +64,7 @@ export const api = {
       rows,
       useShell,
       resumeId: resumeId ?? null,
+      isAux,
     }),
   latestClaudeSession: (workspaceId: string) =>
     invoke<ResumableSession | null>("latest_claude_session", { workspaceId }),

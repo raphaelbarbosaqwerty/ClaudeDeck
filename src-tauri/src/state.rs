@@ -91,6 +91,7 @@ mod tests {
             kind: WorkspaceKind::Project,
             parent_id: None,
             branch: None,
+            category: None,
         }
     }
 

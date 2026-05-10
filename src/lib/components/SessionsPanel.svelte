@@ -4,7 +4,34 @@
   import { api, type ResumableSession } from "../api";
   import type { Session, Workspace } from "../types";
   import { avatarDataUri } from "../utils/avatar";
+  import Icon from "./Icon.svelte";
   import SessionCard from "./SessionCard.svelte";
+
+  // Persist which category sections the user has collapsed. Keyed by the
+  // category name (case-preserved) so renaming a category resets the state.
+  const COLLAPSED_KEY = "cd:collapsed-categories";
+  const UNCATEGORIZED = "Uncategorized";
+
+  function loadCollapsed(): Set<string> {
+    if (typeof localStorage === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem(COLLAPSED_KEY);
+      if (!raw) return new Set();
+      return new Set(JSON.parse(raw));
+    } catch {
+      return new Set();
+    }
+  }
+
+  let collapsed = $state<Set<string>>(loadCollapsed());
+
+  function toggleCollapsed(cat: string) {
+    const next = new Set(collapsed);
+    if (next.has(cat)) next.delete(cat);
+    else next.add(cat);
+    collapsed = next;
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+  }
 
   function avatarFor(ws: Workspace, parentId?: string): string {
     return avatarDataUri(ws.id, { parentId, size: 32 });
@@ -58,9 +85,23 @@
     children: Array<{ workspace: Workspace; sessions: Session[] }>;
   };
 
+  /// Categories collected for rendering. Each section holds the groups
+  /// that share that category. The "Uncategorized" bucket is always last
+  /// even when alphabetical order would put it elsewhere — it's a visual
+  /// "inbox" the user knows where to find.
+  type Section = {
+    category: string;
+    groups: Group[];
+    /// Total live sessions in this section — surfaced in the header.
+    liveCount: number;
+  };
+
   let groups = $derived.by<Group[]>(() => {
     const sessionsByWorkspace = new Map<string, Session[]>();
+    // Aux shell sessions are tab-local utilities and never appear in the
+    // right-hand Sessions panel — exclude them from grouping.
     for (const s of app.sessions) {
+      if (s.isAux) continue;
       const list = sessionsByWorkspace.get(s.workspaceId) ?? [];
       list.push(s);
       sessionsByWorkspace.set(s.workspaceId, list);
@@ -84,12 +125,62 @@
         children,
       });
     }
-    out.sort((a, b) => a.project.name.localeCompare(b.project.name));
+
+    // Float groups with live sessions to the top WITHIN each category, so
+    // the user's active work never gets buried among placeholder/resume
+    // cards. A group is "live" when its project workspace has at least
+    // one running session OR any of its worktree children does.
+    const isLive = (g: Group) =>
+      g.rootSessions.length > 0 ||
+      g.children.some((c) => c.sessions.length > 0);
+
+    out.sort((a, b) => {
+      const liveDiff = Number(isLive(b)) - Number(isLive(a));
+      if (liveDiff !== 0) return liveDiff;
+      return a.project.name.localeCompare(b.project.name);
+    });
+    return out;
+  });
+
+  /// Top-level structure rendered by the panel: groups bucketed by
+  /// category, with "Uncategorized" pinned at the bottom.
+  let sections = $derived.by<Section[]>(() => {
+    const buckets = new Map<string, Group[]>();
+    for (const g of groups) {
+      const cat = g.project.category?.trim() || UNCATEGORIZED;
+      const list = buckets.get(cat) ?? [];
+      list.push(g);
+      buckets.set(cat, list);
+    }
+
+    const isLive = (g: Group) =>
+      g.rootSessions.length > 0 ||
+      g.children.some((c) => c.sessions.length > 0);
+
+    const out: Section[] = [];
+    for (const [category, gs] of buckets) {
+      out.push({
+        category,
+        groups: gs,
+        liveCount: gs.filter(isLive).length,
+      });
+    }
+
+    // Sort: real categories first (alpha, but live sections to the top),
+    // then "Uncategorized" pinned last regardless.
+    out.sort((a, b) => {
+      const aIsUncat = a.category === UNCATEGORIZED;
+      const bIsUncat = b.category === UNCATEGORIZED;
+      if (aIsUncat !== bIsUncat) return aIsUncat ? 1 : -1;
+      const liveDiff = Number(b.liveCount > 0) - Number(a.liveCount > 0);
+      if (liveDiff !== 0) return liveDiff;
+      return a.category.localeCompare(b.category);
+    });
     return out;
   });
 
   let totalCost = $derived(
-    app.sessions.reduce((acc, s) => acc + s.cost, 0),
+    app.sessions.filter((s) => !s.isAux).reduce((acc, s) => acc + s.cost, 0),
   );
 </script>
 
@@ -106,7 +197,28 @@
       </div>
     {/if}
 
-    {#each groups as group (group.project.id)}
+    {#each sections as section (section.category)}
+      {@const isCollapsed = collapsed.has(section.category)}
+      <div class="section" class:collapsed={isCollapsed}>
+        <button
+          class="section-header"
+          onclick={() => toggleCollapsed(section.category)}
+          aria-expanded={!isCollapsed}
+        >
+          <span class="caret" class:rotated={!isCollapsed}>
+            <Icon name="caretRight" size={10} />
+          </span>
+          <span class="section-name">{section.category}</span>
+          <span class="section-count">{section.groups.length}</span>
+          {#if section.liveCount > 0}
+            <span class="section-live">●</span>
+          {/if}
+        </button>
+
+        {#if !isCollapsed}
+          <div class="section-body">
+
+    {#each section.groups as group (group.project.id)}
       <div class="group">
         {#if group.rootSessions.length === 0}
           {@const resume = resumable[group.project.id]}
@@ -194,6 +306,11 @@
         {/each}
       </div>
     {/each}
+
+          </div>
+        {/if}
+      </div>
+    {/each}
   </div>
 </aside>
 
@@ -235,6 +352,62 @@
   }
 
   .group { display: flex; flex-direction: column; gap: 8px; }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    padding: 4px 4px 4px 0;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    cursor: pointer;
+  }
+  .section-header:hover { color: var(--text-2); }
+  .caret {
+    display: inline-flex;
+    transition: transform 140ms ease;
+  }
+  .caret.rotated { transform: rotate(90deg); }
+  .section-name { flex: 1; }
+  .section-count {
+    background: var(--surface-2);
+    color: var(--text-3);
+    border-radius: 9px;
+    padding: 1px 7px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .section-live {
+    color: var(--green);
+    font-size: 10px;
+    line-height: 1;
+    /* Soft pulse mirrors the avatar's "generating" pulse so the user
+       links the section header to the activity inside. */
+    animation: cd-section-live 1.6s ease-in-out infinite;
+  }
+  @keyframes cd-section-live {
+    0%, 100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+  }
+  .section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 2px;
+  }
 
   /* Row that pairs the new-session placeholder with the resume affordance. */
   .placeholder-row {

@@ -7,6 +7,7 @@ mod sessions;
 mod state;
 mod status_watcher;
 mod toolkit;
+mod vibrancy;
 mod workspaces;
 
 use sessions::SessionRuntime;
@@ -29,11 +30,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // Auto-updater is deferred — see docs/AUTO_UPDATE_SETUP.md.
         .manage(app_state)
         .manage(runtime)
         .invoke_handler(tauri::generate_handler![
             workspaces::list_workspaces,
             workspaces::add_workspace,
+            workspaces::set_workspace_category,
             workspaces::remove_workspace,
             workspaces::list_worktrees_for,
             workspaces::create_worktree,
@@ -49,6 +52,7 @@ pub fn run() {
             toolkit::remove_command,
             toolkit::run_command,
             toolkit::dispatch_agent,
+            vibrancy::set_window_vibrancy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

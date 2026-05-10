@@ -63,6 +63,26 @@ html, body {
   overflow: hidden;
 }
 
+/* Vibrancy mode — when the user enables macOS native blur, we drop the
+   solid body background so the NSVisualEffectView shows through, and
+   make all surfaces semi-transparent. Backdrop-filter keeps text legible
+   over the blurred desktop. Only macOS actually renders the blur; on
+   other platforms this just produces semi-transparent panels over the
+   body bg, which still looks fine. */
+html[data-vibrancy="true"], html[data-vibrancy="true"] body {
+  background: transparent;
+}
+html[data-vibrancy="true"] {
+  --surface-1: rgba(21, 21, 26, 0.72);
+  --surface-2: rgba(28, 28, 35, 0.72);
+  --surface-3: rgba(37, 37, 48, 0.72);
+}
+html[data-vibrancy="true"][data-theme="light"] {
+  --surface-1: rgba(255, 255, 255, 0.72);
+  --surface-2: rgba(242, 242, 240, 0.72);
+  --surface-3: rgba(230, 230, 227, 0.72);
+}
+
 button {
   font: inherit;
   color: inherit;

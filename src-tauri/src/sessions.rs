@@ -60,12 +60,19 @@ pub fn create_session(
     rows: u16,
     use_shell: Option<bool>,
     resume_id: Option<String>,
+    is_aux: Option<bool>,
 ) -> Result<Session, String> {
     let ws_uuid = Uuid::parse_str(&workspace_id).map_err(|e| e.to_string())?;
     let ws = state.get_workspace(&ws_uuid).ok_or("Workspace not found")?;
 
     let mut session = Session::new(ws.id, ws.name.clone());
-    let cmd = if use_shell.unwrap_or(false) {
+    let aux = is_aux.unwrap_or(false);
+    // Aux panes are always shells. We force the flag here so a caller can't
+    // accidentally request `is_aux=true` with `use_shell=false` and end up
+    // with an aux pane that's somehow running claude — that would defeat
+    // the entire purpose of the secondary pane.
+    let shell = aux || use_shell.unwrap_or(false);
+    let cmd = if shell {
         SpawnCommand::Shell
     } else {
         SpawnCommand::Claude { resume: resume_id }
@@ -76,11 +83,19 @@ pub fn create_session(
         .spawn(app.clone(), session.id, &ws.path, cols, rows, cmd)
         .map_err(|e| e.to_string())?;
 
-    runtime.attach_watchers(app, session.id, ws.path.clone());
+    // Aux panes don't need JSONL/status watchers — those track Claude's
+    // state and tokens, neither of which apply to a plain shell. Skip
+    // them to avoid unnecessary background work.
+    if !aux {
+        runtime.attach_watchers(app, session.id, ws.path.clone());
+    }
 
     // Stamp default model from preference. Real value will be overwritten by
-    // the JSONL watcher's first usage event.
-    session.model = "sonnet".into();
+    // the JSONL watcher's first usage event. Aux panes have no model — we
+    // leave the default "sonnet" stamp but no JSONL will ever overwrite it,
+    // and the UI doesn't render the model badge on aux sessions anyway.
+    session.model = if aux { "shell".into() } else { "sonnet".into() };
+    session.is_aux = aux;
     state.add_session(session.clone());
     Ok(session)
 }
