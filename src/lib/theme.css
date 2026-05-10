@@ -1,0 +1,101 @@
+/* ClaudeDeck design tokens. Inspired by DraftFrame's terminal-first aesthetic.
+   The light theme is a deliberate inverse — lighter surfaces, darker text —
+   that keeps the same accent so brand recognition holds across modes. */
+:root, :root[data-theme="dark"] {
+  --bg: #0e0e10;
+  --surface-1: #15151a;
+  --surface-2: #1c1c23;
+  --surface-3: #252530;
+  --border: #2a2a35;
+
+  --text-1: #e8e8ea;
+  --text-2: #a8a8b3;
+  --text-3: #6c6c78;
+
+  --accent: #ff8c42;
+  --green: #5fbf6f;
+  --yellow: #e0c25c;
+  --red: #e35d6a;
+  --cyan: #5fb5d8;
+  --purple: #b48bff;
+}
+
+:root[data-theme="light"] {
+  --bg: #fafaf8;
+  --surface-1: #ffffff;
+  --surface-2: #f2f2f0;
+  --surface-3: #e6e6e3;
+  --border: #d8d8d4;
+
+  --text-1: #1a1a1f;
+  --text-2: #4a4a55;
+  --text-3: #8a8a95;
+
+  --accent: #e87532;
+  --green: #379348;
+  --yellow: #b8932d;
+  --red: #c43d4d;
+  --cyan: #3792b8;
+  --purple: #7e5dd6;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --font-mono:
+    "JetBrains Mono", "SF Mono", Menlo, Monaco, "Cascadia Code", monospace;
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  outline: none;
+}
+input:focus { border-color: var(--accent); }
+/* Placeholder styled as a soft, italic hint — distinguishes typed input from
+   the example. Lower opacity and the italic face read as "suggestion" without
+   competing for attention with real values. */
+input::placeholder {
+  color: var(--text-3);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border); }
