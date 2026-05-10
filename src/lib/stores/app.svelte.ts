@@ -251,6 +251,17 @@ class AppStore {
     });
   }
 
+  /// Bumped when the user asks for a forced redraw of the active terminal
+  /// (⌘⇧R). Each Terminal component subscribes via $effect; only the one
+  /// whose session matches `activeSessionId` actually performs the resync.
+  /// Using a counter (not a boolean) avoids a missed-edge if two requests
+  /// coalesce — every increment is visible.
+  forceRedrawTick = $state(0);
+
+  requestForceRedraw() {
+    this.forceRedrawTick += 1;
+  }
+
   /// Reorder sessions in place (used by drag-to-reorder in the tab bar).
   reorderSessions(fromIndex: number, toIndex: number) {
     if (fromIndex === toIndex) return;

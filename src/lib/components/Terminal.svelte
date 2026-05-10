@@ -6,6 +6,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import "@xterm/xterm/css/xterm.css";
   import { api } from "../api";
+  import { app } from "../stores/app.svelte";
 
   type Props = {
     sessionId: string;
@@ -141,6 +142,32 @@
         } catch {}
       });
     }
+  });
+
+  // Force-redraw recovery — wired to ⌘⇧R from +page.svelte. When Claude's
+  // TUI gets out of sync (cursor positioning artifacts, half-overwritten
+  // lines), this resync sequence usually clears the corruption:
+  //   1. fit + resizePty so xterm and PTY agree on cols/rows.
+  //   2. Send SIGWINCH twice with a tick between to make sure Claude re-runs
+  //      its layout on the *current* dims.
+  //   3. xterm.refresh repaints every cell from the buffer, which clears
+  //      any stale visual cells xterm itself was holding.
+  // Only the visible terminal acts on the tick — all instances see it but
+  // only the active one does work.
+  $effect(() => {
+    const tick = app.forceRedrawTick;
+    if (tick === 0) return;
+    if (!visible || !term || !fit) return;
+    queueMicrotask(async () => {
+      try {
+        fit?.fit();
+        await api.resizePty(sessionId, term!.cols, term!.rows);
+        setTimeout(() => {
+          void api.resizePty(sessionId, term!.cols, term!.rows);
+          term?.refresh(0, term!.rows - 1);
+        }, 40);
+      } catch {}
+    });
   });
 </script>
 

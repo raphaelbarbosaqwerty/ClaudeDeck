@@ -1,6 +1,6 @@
 [package]
 name = "claudedeck"
-version = "0.1.1"
+version = "0.1.2"
 description = "Multi-session Claude Code orchestrator with worktree isolation, agent dispatch, and pipeline awareness."
 authors = ["Raphael Barbosa"]
 edition = "2021"

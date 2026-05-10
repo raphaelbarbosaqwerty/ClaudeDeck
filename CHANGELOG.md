@@ -14,6 +14,44 @@ release. Move these into a versioned section when cutting a new release.
 
 ---
 
+## [0.1.2] — 2026-05-10
+
+Patch release fixing terminal-rendering corruption that affected sessions
+with multi-byte characters (Portuguese accents, emoji, box-drawing) —
+which is essentially every real Claude Code conversation.
+
+### 🐛 Fixes
+
+- **PTY: UTF-8 sequences split across read boundaries no longer corrupt
+  the terminal display.** The reader thread previously decoded each
+  4 KB chunk independently with `from_utf8_lossy`; when a multi-byte
+  codepoint landed split between two reads, the partial bytes became
+  `U+FFFD` replacement characters. Because `�` advances the cursor
+  1 cell while the original CJK/wide character would have advanced 2,
+  Claude's TUI and xterm.js diverged on cursor column. Subsequent lines
+  drew on top of one another, producing the
+  `"Twi---confirm hyperframeskfoldersgone---ght"` style of garbled text.
+  The reader now buffers up to 4 trailing bytes (max UTF-8 codepoint
+  length) between chunks and only emits valid UTF-8.
+
+### ✨ New
+
+- **Keyboard shortcut `⌘⇧R` (`Ctrl+Shift+R` on Linux/Windows) forces a
+  redraw of the active terminal.** Recovery path for the rare cases when
+  Claude's alt-buffer still drifts: re-fits the xterm host, sends two
+  spaced `resize_pty` calls (back-to-back SIGWINCH coalesce), and calls
+  `xterm.refresh()` to repaint every cell from the buffer. Equivalent to
+  the "Ctrl+L → redraw" muscle memory but for a TUI app.
+
+### 📝 Notes
+
+- v0.1.1 users on macOS will benefit immediately from upgrading. The
+  artifact frequency depends heavily on what Claude is rendering; users
+  who run in projects with lots of file lists, git output, or non-ASCII
+  text were hitting it constantly.
+
+---
+
 ## [0.1.1] — 2026-05-10
 
 Patch release with two important fixes that landed shortly after v0.1.0.
@@ -120,6 +158,7 @@ Inspired by [DraftFrame](https://github.com/intuitive-compute/DraftFrame)
 
 ---
 
-[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raphaelbarbosaqwerty/ClaudeDeck/releases/tag/v0.1.0

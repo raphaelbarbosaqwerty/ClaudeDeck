@@ -90,21 +90,60 @@ impl PtyManager {
         let event_name = format!("pty:output:{}", session_id);
         let exit_event = format!("pty:exit:{}", session_id);
         thread::spawn(move || {
+            // Buffer for UTF-8 sequences that span chunk boundaries. A 4-byte
+            // codepoint (any emoji, most CJK, many box-drawing chars used by
+            // Claude's TUI) can land split between two `read` returns. If we
+            // decoded each chunk independently with `from_utf8_lossy`, the
+            // partial bytes would render as `\u{FFFD}` replacement chars,
+            // and xterm.js would advance the cursor by a different cell
+            // count than Claude expected — which is *exactly* how the
+            // "linhas concatenadas no meio do texto" artifacts appear.
+            //
+            // Carry forward up to 3 trailing bytes (max prefix of a 4-byte
+            // codepoint) into the next chunk. If pending grows past 4, the
+            // bytes are genuinely invalid (not just a partial codepoint),
+            // so flush them lossy and reset.
+            let mut pending: Vec<u8> = Vec::with_capacity(4);
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        // We send raw bytes as a string. xterm.js's `write`
-                        // accepts strings or Uint8Array; sending a string
-                        // through Tauri is simpler and handles UTF-8 fine
-                        // when the producer (claude) emits valid UTF-8.
-                        // For partial UTF-8 boundaries we'd need to buffer,
-                        // but in practice 4KB chunks split mid-codepoint
-                        // are rare and xterm.js tolerates the resulting
-                        // replacement chars during typing.
-                        let s = String::from_utf8_lossy(&buf[..n]).into_owned();
-                        let _ = app_for_thread.emit(&event_name, s);
+                        // Splice pending + new chunk, find the longest valid
+                        // UTF-8 prefix, hold the trailing partial bytes for
+                        // the next iteration.
+                        let combined: Vec<u8> = if pending.is_empty() {
+                            buf[..n].to_vec()
+                        } else {
+                            let mut v = std::mem::take(&mut pending);
+                            v.extend_from_slice(&buf[..n]);
+                            v
+                        };
+
+                        let valid_up_to = match std::str::from_utf8(&combined) {
+                            Ok(_) => combined.len(),
+                            Err(e) => e.valid_up_to(),
+                        };
+
+                        if valid_up_to > 0 {
+                            // SAFETY: from_utf8 just told us the prefix is valid.
+                            let s = unsafe {
+                                std::str::from_utf8_unchecked(&combined[..valid_up_to])
+                            };
+                            let _ = app_for_thread.emit(&event_name, s.to_string());
+                        }
+
+                        // Hold the unread tail. Cap at 4 bytes — any longer
+                        // means the bytes are genuinely invalid, not just a
+                        // partial codepoint, so flush them lossy and reset.
+                        let tail = &combined[valid_up_to..];
+                        if tail.len() > 4 {
+                            let lossy = String::from_utf8_lossy(tail).into_owned();
+                            let _ = app_for_thread.emit(&event_name, lossy);
+                            pending.clear();
+                        } else {
+                            pending = tail.to_vec();
+                        }
                     }
                     Err(_) => break,
                 }

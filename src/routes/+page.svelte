@@ -109,11 +109,19 @@
 
   // Cmd/Ctrl+K toggles the toolkit when there's an active session — common
   // muscle memory from VS Code/Linear and friends.
+  // Cmd/Ctrl+Shift+R forces a redraw of the active terminal — recovery
+  // path when the TUI gets out of sync (rare cursor-positioning artifacts).
   function onKeydown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "k") {
       if (activeWorkspace) {
         e.preventDefault();
         toolkitOpen = !toolkitOpen;
+      }
+    } else if (mod && e.shiftKey && e.key.toLowerCase() === "r") {
+      if (activeSession) {
+        e.preventDefault();
+        app.requestForceRedraw();
       }
     } else if (e.key === "Escape" && toolkitOpen) {
       toolkitOpen = false;
